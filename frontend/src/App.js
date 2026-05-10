@@ -1,54 +1,77 @@
 import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import Layout from "./components/Layout";
+import Landing from "./pages/Landing";
+import AuthPage from "./pages/AuthPage";
+import Onboarding from "./pages/Onboarding";
+import Dashboard from "./pages/Dashboard";
+import FocusPage from "./pages/Focus";
+import Tasks from "./pages/Tasks";
+import BodyDouble from "./pages/BodyDouble";
+import ProgressPage from "./pages/Progress";
+import Shop from "./pages/Shop";
+import Settings from "./pages/Settings";
+import Pricing from "./pages/Pricing";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function Protected({ children, requireOnboarded = true }) {
+  const { user, loading } = useAuth();
+  const loc = useLocation();
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-[#8D829B]">loading…</div>;
+  if (!user) return <Navigate to="/auth" replace state={{ from: loc.pathname }} />;
+  if (requireOnboarded && !user.onboarded) return <Navigate to="/onboarding" replace />;
+  return children;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
+function ApplyPrefs() {
+  const { user } = useAuth();
   useEffect(() => {
-    helloWorldApi();
-  }, []);
+    document.documentElement.classList.toggle("reduce-motion", !!user?.settings?.reduce_motion);
+  }, [user]);
+  return null;
+}
 
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+function Shell({ children }) {
+  return <Layout>{children}</Layout>;
+}
 
-function App() {
+function AppRoutes() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <>
+      <ApplyPrefs />
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/auth" element={<AuthPage />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/onboarding" element={<Protected requireOnboarded={false}><Onboarding /></Protected>} />
+        <Route path="/dashboard" element={<Protected><Shell><Dashboard /></Shell></Protected>} />
+        <Route path="/focus" element={<Protected><FocusPage /></Protected>} />
+        <Route path="/tasks" element={<Protected><Shell><Tasks /></Shell></Protected>} />
+        <Route path="/body-double" element={<Protected><Shell><BodyDouble /></Shell></Protected>} />
+        <Route path="/progress" element={<Protected><Shell><ProgressPage /></Shell></Protected>} />
+        <Route path="/shop" element={<Protected><Shell><Shop /></Shell></Protected>} />
+        <Route path="/settings" element={<Protected><Shell><Settings /></Shell></Protected>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <AppRoutes />
+        <Toaster
+          theme="dark"
+          richColors
+          position="top-right"
+          toastOptions={{
+            style: { background: "#2A2438", color: "#FDFCFD", border: "1px solid #3A3249", borderRadius: "1rem" },
+          }}
+        />
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
