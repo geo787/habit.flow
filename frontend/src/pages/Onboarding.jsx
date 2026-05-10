@@ -172,7 +172,12 @@ export default function Onboarding() {
             <button data-testid="onboarding-back" onClick={() => setStep(step - 1)} className="ff-btn-ghost">Back</button>
           )}
           {step < steps.length - 1 ? (
-            <button data-testid="onboarding-next" onClick={() => setStep(step + 1)} className="ff-btn-primary">Next</button>
+            <button
+              data-testid="onboarding-next"
+              onClick={() => setStep(step + 1)}
+              disabled={step === 0 && struggles.length === 0}
+              className="ff-btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+            >Next</button>
           ) : (
             <button data-testid="onboarding-finish" disabled={saving} onClick={finish} className="ff-btn-primary">
               {saving ? "Saving…" : "Begin my flow ✨"}
