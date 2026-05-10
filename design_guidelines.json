@@ -1,0 +1,121 @@
+{
+  "theme": "dark",
+  "archetype": "Pastel & Soft (Dark Mode Adaptation for ADHD)",
+  "emotional_tone": "Warm, encouraging, non-judgmental, frictionless, comforting",
+  "typography": {
+    "fonts": {
+      "heading": "Nunito, sans-serif",
+      "body": "Nunito, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-bold",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base sm:text-lg leading-relaxed",
+      "small": "text-sm font-medium",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold"
+    },
+    "rules": [
+      "No Inter or standard sterile SaaS fonts.",
+      "Headings use tight tracking to hold attention without floating.",
+      "Body text uses increased line-height (leading-relaxed) for cognitive ease and readability.",
+      "Use high contrast text colors, avoiding gray-on-gray completely."
+    ]
+  },
+  "colors": {
+    "background": {
+      "default": "#1A1625",
+      "surface": "#2A2438",
+      "surfaceHover": "#352D47"
+    },
+    "brand": {
+      "primary": "#FFD166",
+      "primaryHover": "#F4C455",
+      "secondary": "#B19CD9",
+      "accent": "#45B69C"
+    },
+    "text": {
+      "primary": "#FDFCFD",
+      "secondary": "#D0C7DB",
+      "disabled": "#8D829B",
+      "inverse": "#1A1625"
+    },
+    "feedback": {
+      "success": "#45B69C",
+      "warning": "#FFD166",
+      "error": "#E07A5F",
+      "info": "#89B4FA"
+    },
+    "border": {
+      "default": "#3A3249",
+      "focus": "#B19CD9"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Progressive disclosure and hyper-clarity. Max 3 primary actions per screen to prevent 'analysis paralysis'.",
+    "container_padding": "p-6 md:p-8 lg:p-12",
+    "bento_grid": {
+      "dashboard": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 md:gap-8",
+      "hero_span": "col-span-full md:col-span-2 lg:col-span-3 (Big START FOCUS CTA)",
+      "sidebar_span": "col-span-1 md:col-span-1 (Level/XP, Buddy Pulse)"
+    },
+    "components": {
+      "cards": "bg-[#2A2438] rounded-3xl p-6 md:p-8 border border-[#3A3249]/50 shadow-[0_8px_32px_rgba(0,0,0,0.12)]",
+      "buttons": "rounded-full px-8 py-3 font-bold transition-transform active:scale-95"
+    }
+  },
+  "surfaces_and_micro_themes": {
+    "dashboard_cards": "Soft Neumorphic/Claymorphic logic. Thick rounded borders (rounded-3xl). No sharp corners anywhere. Deep warm background with soft inner glows on hover.",
+    "focus_timer": "Immersive 'Breathing Circle' mode. Extreme minimalism, everything else fades away to leave just the timer and a calming pulsing orb.",
+    "glassmorphism": "Used minimally for sticky headers (backdrop-blur-xl bg-[#1A1625]/80) with a 1px border-[#3A3249]."
+  },
+  "motion_and_interactions": {
+    "rules": [
+      "Respect 'prefers-reduced-motion' globally.",
+      "Avoid auto-play videos, infinitely looping chaotic animations, or fast flashes.",
+      "Use subtle, short (<0.3s) micro-interactions for button presses to confirm action (dopamine hit).",
+      "Breathing animation in focus mode must be slow, rhythmic (e.g., 4s inhale, 4s hold, 6s exhale)."
+    ]
+  },
+  "adhd_specific_patterns": {
+    "cognitive_load": "Limit today's task list to EXACTLY 3 items (The Rule of 3). Hide the rest behind a 'Brain Dump' or 'More Tasks' accordion.",
+    "forgiveness_mechanisms": "'Grace Days' for streaks. If a user misses a day, the streak freezes instead of resetting to 0 (prevents demoralization).",
+    "gamification": "Frequent, low-friction micro-rewards. XP for just checking in. Confetti on task completion (with toggle to disable).",
+    "body_doubling": "Live participant count with soft glowing pulsing avatars to create a sense of silent accountability without social pressure.",
+    "low_stimulus_mode": "Include a toggle for 'High Contrast / Low Stimulus' that reduces UI colors to greyscale with yellow CTAs."
+  },
+  "media": {
+    "images": [
+      {
+        "category": "focus_buddy_avatar",
+        "url": "https://static.prod-images.emergentagent.com/jobs/638dae57-d7f5-4d8d-9162-d740e032ba86/images/ad9f5cbe914957a73ce9ee1d400b3b8818563701cfd3ffb5c2489ca7f56c6fdf.png",
+        "description": "3D cute floating blob character mascot, soft pastel purple and warm yellow, to be used in dashboard as the personal focus companion.",
+        "placement": "Dashboard header, focus mode idle screen, and settings profile."
+      },
+      {
+        "category": "gamification_badges",
+        "url": "https://static.prod-images.emergentagent.com/jobs/638dae57-d7f5-4d8d-9162-d740e032ba86/images/c57ea970cfbb9e6eeb76f9d9bf10cbcb33bcd5e0375872fb01461162034e6655.png",
+        "description": "Set of 3D gamification badges (flame, star, shield) in soft pastel colors.",
+        "placement": "Progress/Rewards page, Streak indicator on Dashboard."
+      },
+      {
+        "category": "calming_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/638dae57-d7f5-4d8d-9162-d740e032ba86/images/95fb4c0da270864f00af66c4104e42995a4b64e86c2dc7e9ec293880751addb2.png",
+        "description": "Abstract gradient mesh with deep warm charcoal and soft glowing pastel orbs.",
+        "placement": "Hero section of landing page, or as a very subtle background for the 'Focus Mode' fullscreen timer."
+      }
+    ]
+  },
+  "component_instructions": {
+    "shadcn_overrides": "Override Shadcn's default 'Card' and 'Button' components. Change standard border-radius to `rounded-3xl` for cards and `rounded-full` for buttons. Remove sharp 1px borders in favor of soft ambient shadows or slightly lighter surface colors.",
+    "testing": "All interactive elements MUST include `data-testid` attributes (e.g., `data-testid=\"start-focus-btn\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Use Nunito font for all text to create a soft, non-intimidating 'warm hug' feel.",
+    "Implement the Dashboard with extreme focus: The 'START FOCUS' CTA must be massive and unmissable. Display only 3 tasks max.",
+    "In the Gamification logic, implement 'Grace Days' - do not punish users for missing a day.",
+    "Ensure all colors map precisely to the provided palette. Do not use generic tailwind slate or zinc for the background; use the specific #1A1625 deep warm charcoal."
+  ]
+}
