@@ -50,7 +50,12 @@ export default function Layout({ children }) {
         <div className="mt-auto">
           <div className="ff-card p-4 mb-3">
             <div className="text-xs text-[#8D829B] mb-1">Hello,</div>
-            <div className="font-bold truncate" data-testid="user-name">{user?.name}</div>
+            <div className="flex items-center gap-2">
+              <div className="font-bold truncate" data-testid="user-name">{user?.name}</div>
+              {user?.is_pro && (
+                <span data-testid="pro-badge" className="text-[10px] px-2 py-0.5 rounded-full bg-[#FFD166] text-[#1A1625] font-extrabold">PRO</span>
+              )}
+            </div>
             <div className="text-xs text-[#D0C7DB]">Lvl {user?.level_info?.level} · {user?.xp} XP</div>
           </div>
           <button

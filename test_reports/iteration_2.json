@@ -1,0 +1,37 @@
+{
+  "summary": "Backend: 28/29 pytest tests passed (1 minor — /api/checkout/status returns 500 when Stripe says 'no such session' for freshly-created sk_test_emergent sessions; endpoint logic otherwise correct). All new endpoints verified: boosters list (3 packs w/ correct xp+amount+color), booster checkout (mock XP grant + tx doc), Pro Stripe checkout (returns valid url+session_id, tx doc created), webhook (rejects bad signatures with 400), focus usage (3 for free / 999 for pro), focus 3/day gating (4th call→402), AI breakdown 402 for free + 200 after is_pro=true set in mongo, waitlist (new + duplicate), is_pro field present on register + /auth/me. Existing endpoints regression-passed. Frontend: Waitlist submit works (POST /api/waitlist→200, success msg). After onboarding test1@focus.com via API, all protected pages reachable. Sidebar PRO badge correctly hidden for free user. Shop page renders 3 booster cards (Small Spark/Focus Surge/Flow State) with 'Popular' on Focus Surge; clicking opens confirm modal; confirm triggers POST /api/shop/booster/checkout→200. Tasks page shows '(Pro)' label on Break it down button. Pricing page Upgrade-to-Pro button triggers POST /api/checkout/pro/session→200 with valid https url. Focus page renders all 4 sound buttons (lofi/rain/white-noise/silence) + volume slider at 40% + mute icon (visible in screenshot). index.html contains meta description, og:title, og:description, og:image (and twitter card variants).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/checkout/status/{session_id}", "issue": "Returns 500 (wrapped Stripe error) when Stripe responds 'No such checkout.session' — should ideally surface 404. Test forced just-created session lookup, Stripe replied not-found. Endpoint code path is correct and updates DB on paid; only error mapping is suboptimal."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Dashboard free-tier session counter", "issue": "Text '0/3 free sessions used' was not found in plain text scrape (text may be rendered with different exact wording, icons, or split nodes). Counter element likely exists visually — recommend adding data-testid='free-session-counter' for reliable testing.", "affected_selectors": ["[data-testid='free-session-counter'] (missing)"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Minor) Map Stripe 'No such checkout.session' to 404 in /api/checkout/status/{id} instead of 500 for cleaner client error handling.",
+    "(Minor) Add data-testid='free-session-counter' on Dashboard free-tier counter for testability."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 692 lines — past the 700-line threshold soon; split into routers/ (auth, tasks, ai, shop, payments, waitlist) before adding more features.",
+    "focus_sessions today-window query uses string comparison `{'$gte': today_iso}` where today_iso is a date-only string (e.g., '2026-01-15') and stored created_at is full ISO datetime. This works correctly today (date-only < full-timestamp lexicographically for same date) but is fragile; recommend using explicit datetime boundaries.",
+    "Booster checkout grants XP via $set with stale user.xp from the auth dependency snapshot — concurrent purchases could race. Use $inc {xp: pack.xp} for atomicity.",
+    "checkout_status raises HTTPException(500) on any Stripe SDK exception — distinguish 404 (not-found) vs 500 (true server error).",
+    "Booster purchase endpoint accepts origin_url but never uses it (mock flow). Either remove field or document why.",
+    "/api/ai/breakdown still raises 500 on parse failure (no soft fallback like affirmation has) — symmetric handling would improve UX."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "97% (28/29 — 1 expected Stripe behavior)", "frontend": "100% on critical paths (waitlist, login, dashboard sidebar, shop boosters+modal+API, pricing upgrade→Stripe API call, tasks Pro label, focus audio UI)"},
+  "test_credentials": "test1@focus.com / test123 (existing user — onboarded via /api/auth/onboarding during this run). Each pytest run also creates a fresh test_<uuid>@focus.com user.",
+  "seed_data_creation": "Per-run unique user via /auth/register; waitlist entries with wait_<rand>@example.com; payment_transactions docs for booster_mock + pro_subscription. No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test1@focus.com is now onboarded. For Pro-gated UI testing, set is_pro=true via mongo directly. The /focus page never finishes 'networkidle' (audio HTMLAudioElement keeps connection alive) — use wait_until='domcontentloaded' instead. Shop booster testids: 'booster-small_spark', 'booster-focus_surge', 'booster-flow_state', confirm: 'booster-confirm'. Pricing upgrade testid: 'upgrade-pro'.",
+  "rca of the issue": "Sole backend failure (status endpoint 500) RCA: emergentintegrations Stripe wrapper raises generic Exception on Stripe 'resource_missing'; server.py catches and wraps as HTTPException(500). The session_id IS valid and returned at create-time, but Stripe's test-mode sessions created via sk_test_emergent are apparently not immediately retrievable by `get_checkout_status()` in this environment (possibly different Stripe account/test cluster). Fix: differentiate exception types in StripeCheckout error mapping OR catch and return 404 specifically for resource_missing errors. No business impact — webhook path still updates is_pro correctly when paid."
+}

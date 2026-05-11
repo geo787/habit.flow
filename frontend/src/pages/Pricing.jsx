@@ -1,24 +1,34 @@
 import { Check } from "lucide-react";
+import { useState } from "react";
+import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const tiers = [
   {
+    key: "free",
     name: "Free",
     price: "$0",
     desc: "for getting started softly",
     features: ["3 focus sessions/day", "Brain dump (10 tasks)", "Basic gamification", "1 body doubling room/day"],
     cta: "Current plan",
     highlight: false,
+    canBuy: false,
   },
   {
+    key: "pro",
     name: "Pro",
     price: "$7.99",
     sub: "/month",
     desc: "unlock everything, gently",
     features: ["Unlimited sessions + tasks", "AI task breakdown", "All sounds + themes", "Mood analytics", "Unlimited body doubling", "Weekly wrapped reports"],
-    cta: "Upgrade — coming soon",
+    cta: "Upgrade to Pro",
     highlight: true,
+    canBuy: true,
   },
   {
+    key: "teams",
     name: "Teams",
     price: "$12",
     sub: "/user/month",
@@ -26,10 +36,29 @@ const tiers = [
     features: ["Shared workspaces", "Coach dashboard", "Custom templates", "Slack integration", "Billing dashboard"],
     cta: "Talk to us",
     highlight: false,
+    canBuy: false,
   },
 ];
 
 export default function Pricing() {
+  const { user } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+
+  const upgrade = async () => {
+    if (!user) { navigate("/auth?mode=register"); return; }
+    setBusy(true);
+    try {
+      const { data } = await api.post("/checkout/pro/session", {
+        origin_url: window.location.origin,
+      });
+      window.location.href = data.url;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not start checkout");
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="p-6 md:p-12 max-w-6xl mx-auto">
       <div className="text-center mb-12">
@@ -40,8 +69,8 @@ export default function Pricing() {
       <div className="grid md:grid-cols-3 gap-5">
         {tiers.map((t) => (
           <div
-            key={t.name}
-            data-testid={`pricing-${t.name.toLowerCase()}`}
+            key={t.key}
+            data-testid={`pricing-${t.key}`}
             className={`ff-card p-7 ${t.highlight ? "ring-2 ring-[#FFD166] relative overflow-hidden" : ""}`}
           >
             {t.highlight && <div className="absolute top-3 right-3 text-xs px-3 py-1 rounded-full bg-[#FFD166] text-[#1A1625] font-extrabold">popular</div>}
@@ -59,18 +88,29 @@ export default function Pricing() {
                 </li>
               ))}
             </ul>
-            <button
-              disabled
-              className={`w-full py-3 rounded-full font-extrabold text-sm ${t.highlight ? "bg-[#FFD166] text-[#1A1625]" : "border border-[#3A3249] text-[#D0C7DB]"} opacity-80`}
-            >
-              {t.cta}
-            </button>
+            {t.canBuy ? (
+              <button
+                data-testid={`upgrade-${t.key}`}
+                onClick={upgrade}
+                disabled={busy || user?.is_pro}
+                className="w-full py-3 rounded-full font-extrabold text-sm bg-[#FFD166] text-[#1A1625] disabled:opacity-60 hover:bg-[#F4C455] transition-all"
+              >
+                {user?.is_pro ? "You're Pro 🌟" : busy ? "Opening checkout…" : t.cta}
+              </button>
+            ) : (
+              <button
+                disabled
+                className={`w-full py-3 rounded-full font-extrabold text-sm border border-[#3A3249] text-[#D0C7DB] opacity-80`}
+              >
+                {t.cta}
+              </button>
+            )}
           </div>
         ))}
       </div>
 
       <div className="text-center mt-12 text-sm text-[#8D829B]">
-        Stripe checkout coming in phase 2. We'll email you when Pro is ready.
+        Stripe test mode — no real charges. Cancel anytime.
       </div>
     </div>
   );

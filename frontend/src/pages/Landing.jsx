@@ -1,8 +1,31 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { Sparkles, Heart, Timer, Users } from "lucide-react";
 import FocusBuddy from "../components/FocusBuddy";
+import { api } from "../lib/api";
+import { toast } from "sonner";
 
 export default function Landing() {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [joined, setJoined] = useState(false);
+
+  const joinWaitlist = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      await api.post("/waitlist", { email: email.trim() });
+      setJoined(true);
+      toast.success("You're on the list! We'll reach out soon 💛");
+      setEmail("");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not join — try again?");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen">
       <header className="px-6 md:px-12 py-6 flex justify-between items-center">
@@ -76,6 +99,42 @@ export default function Landing() {
               <div className="text-sm text-[#D0C7DB] leading-relaxed">{f.d}</div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Waitlist */}
+      <section className="px-6 md:px-12 lg:px-20 pb-20">
+        <div className="ff-card p-8 md:p-12 max-w-3xl mx-auto text-center relative overflow-hidden" data-testid="waitlist-section">
+          <div className="absolute -top-20 -left-20 h-64 w-64 rounded-full bg-[#FFD166]/10 blur-3xl" />
+          <div className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-[#B19CD9]/15 blur-3xl" />
+          <div className="relative">
+            <h2 className="text-3xl sm:text-4xl font-black mb-3">Be the first to know when Pro launches 🚀</h2>
+            <p className="text-[#D0C7DB] mb-8 max-w-lg mx-auto">Get early access, founder pricing, and a soft heads-up — no spam, just one warm email.</p>
+            {joined ? (
+              <div data-testid="waitlist-success" className="ff-card inline-block px-6 py-4 bg-[#45B69C]/10 ring-1 ring-[#45B69C]">
+                <span className="text-[#45B69C] font-extrabold">You're on the list! We'll reach out soon 💛</span>
+              </div>
+            ) : (
+              <form onSubmit={joinWaitlist} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto" data-testid="waitlist-form">
+                <input
+                  data-testid="waitlist-email-input"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="ff-input flex-1"
+                />
+                <button
+                  data-testid="waitlist-submit"
+                  disabled={busy}
+                  className="ff-btn-primary disabled:opacity-60 whitespace-nowrap"
+                >
+                  {busy ? "Adding…" : "Notify me"}
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </section>
 

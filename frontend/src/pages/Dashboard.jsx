@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import FocusBuddy from "../components/FocusBuddy";
-import { Flame, Users, Sparkles, Play, Heart } from "lucide-react";
+import { Flame, Users, Sparkles, Play, Heart, X, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 const moodEmojis = ["😩", "😕", "😐", "🙂", "🔥"];
@@ -13,23 +13,50 @@ export default function Dashboard() {
   const [tasks, setTasks] = useState([]);
   const [affirmation, setAffirmation] = useState("");
   const [rooms, setRooms] = useState({ rooms: [], total_live: 0 });
+  const [usage, setUsage] = useState(null);
   const [moodOpen, setMoodOpen] = useState(false);
   const [mood, setMood] = useState(3);
   const [energy, setEnergy] = useState(3);
+  const [showProBanner, setShowProBanner] = useState(false);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
 
   useEffect(() => {
     (async () => {
-      const [t, aff, r] = await Promise.all([
+      const [t, aff, r, u] = await Promise.all([
         api.get("/tasks"),
         api.get("/ai/affirmation").catch(() => ({ data: { affirmation: "You showed up — that already counts." } })),
         api.get("/body-double/rooms"),
+        api.get("/focus/usage"),
       ]);
       setTasks(t.data);
       setAffirmation(aff.data.affirmation);
       setRooms(r.data);
+      setUsage(u.data);
     })();
   }, []);
+
+  // Handle Stripe success redirect
+  useEffect(() => {
+    const upgrade = params.get("upgrade");
+    const sid = params.get("session_id");
+    if (upgrade === "success" && sid) {
+      let attempts = 0;
+      const poll = async () => {
+        try {
+          const { data } = await api.get(`/checkout/status/${sid}`);
+          if (data.payment_status === "paid") {
+            await refresh();
+            setShowProBanner(true);
+            toast.success("Welcome to Pro! 🌟");
+            return;
+          }
+        } catch {}
+        if (attempts++ < 5) setTimeout(poll, 2000);
+      };
+      poll();
+    }
+  }, [params, refresh]);
 
   const todayTasks = tasks.filter((t) => !t.completed).slice(0, 3);
   const lvl = user?.level_info;
@@ -47,6 +74,16 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 md:p-12 max-w-6xl">
+      {showProBanner && (
+        <div data-testid="pro-banner" className="ff-card p-5 mb-6 bg-gradient-to-r from-[#FFD166]/15 to-[#B19CD9]/15 ring-1 ring-[#FFD166] flex items-center gap-3">
+          <Sparkles className="text-[#FFD166]" />
+          <div className="flex-1">
+            <div className="font-extrabold">Welcome to Pro! 🌟</div>
+            <div className="text-sm text-[#D0C7DB]">Unlimited sessions, AI breakdown, all sounds — unlocked.</div>
+          </div>
+          <button onClick={() => setShowProBanner(false)} className="text-[#8D829B]" aria-label="dismiss"><X size={16} /></button>
+        </div>
+      )}
       {/* greeting */}
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
         <div>

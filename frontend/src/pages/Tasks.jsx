@@ -4,7 +4,6 @@ import { celebrate } from "../components/Confetti";
 import { Plus, Trash2, Sparkles, Eye, EyeOff, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext";
-
 const EMOJI_TAGS = [
   { e: "⚡", l: "excited" },
   { e: "😰", l: "scary" },
@@ -19,7 +18,7 @@ export default function Tasks() {
   const [oneThing, setOneThing] = useState(false);
   const [aiBusyId, setAiBusyId] = useState(null);
   const [empathy, setEmpathy] = useState(null);
-  const { refresh } = useAuth();
+  const { user, refresh } = useAuth();
 
   const load = async () => {
     const { data } = await api.get("/tasks");
@@ -57,8 +56,12 @@ export default function Tasks() {
       await api.patch(`/tasks/${t.id}`, { microsteps: data.steps });
       toast.success("Broken into tiny steps ✨");
       load();
-    } catch {
-      toast.error("AI is resting. Try again in a moment.");
+    } catch (e) {
+      if (e?.response?.status === 402) {
+        toast.error("✨ Pro feature — upgrade to unlock AI breakdown");
+      } else {
+        toast.error("AI is resting. Try again in a moment.");
+      }
     } finally {
       setAiBusyId(null);
     }
@@ -174,8 +177,9 @@ export default function Tasks() {
                     disabled={aiBusyId === t.id}
                     onClick={() => aiBreakdown(t)}
                     className="text-xs ff-btn-ghost flex items-center gap-1 disabled:opacity-50"
+                    title={user?.is_pro ? "Break into micro-steps" : "✨ Pro feature — upgrade to unlock"}
                   >
-                    <Sparkles size={12} /> {aiBusyId === t.id ? "thinking…" : "Break it down"}
+                    <Sparkles size={12} /> {aiBusyId === t.id ? "thinking…" : user?.is_pro ? "Break it down" : "✨ Break it down (Pro)"}
                   </button>
                   <button
                     data-testid={`ai-empathy-${t.id}`}

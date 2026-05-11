@@ -16,6 +16,10 @@ import asyncio
 import random
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.payments.stripe.checkout import (
+    StripeCheckout, CheckoutSessionRequest
+)
+from fastapi import Request
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,6 +31,15 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 JWT_ALG = 'HS256'
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
+
+# Server-defined fixed packages — never trust frontend amounts
+PRO_PLAN = {"id": "pro_monthly", "name": "FocusFlow Pro (monthly)", "amount": 7.99, "currency": "usd"}
+BOOSTER_PACKS = {
+    "small_spark": {"id": "small_spark", "name": "Small Spark", "xp": 100, "amount": 1.99, "color": "yellow"},
+    "focus_surge": {"id": "focus_surge", "name": "Focus Surge", "xp": 250, "amount": 2.99, "color": "teal"},
+    "flow_state": {"id": "flow_state", "name": "Flow State", "xp": 600, "amount": 4.99, "color": "purple"},
+}
 
 app = FastAPI(title="FocusFlow API")
 api = APIRouter(prefix="/api")
@@ -154,6 +167,7 @@ async def register(req: RegisterReq):
         "settings": {"reduce_motion": False, "high_contrast": False, "sound": "lofi", "notif_window": [10, 18]},
         "inventory": [],
         "badges": [],
+        "is_pro": False,
         "created_at": iso(utcnow()),
     }
     await db.users.insert_one(user)
@@ -322,6 +336,15 @@ async def list_mood(user=Depends(get_current_user)):
 # ---------- Focus sessions ----------
 @api.post("/focus/session")
 async def end_focus(req: FocusSessionReq, user=Depends(get_current_user)):
+    # Free-tier daily limit: 3 sessions/day (Pro is unlimited)
+    if not user.get("is_pro", False):
+        today_iso = utcnow().date().isoformat()
+        used = await db.focus_sessions.count_documents({
+            "user_id": user["id"],
+            "created_at": {"$gte": today_iso},
+        })
+        if used >= 3:
+            raise HTTPException(402, "Free tier limit: 3 focus sessions/day. Upgrade to Pro for unlimited.")
     xp_gain = req.duration_min if req.completed else 5
     if req.body_doubling and req.completed:
         xp_gain += 10
@@ -409,6 +432,8 @@ def _llm_chat(session_id: str, system_prompt: str) -> LlmChat:
 
 @api.post("/ai/breakdown")
 async def ai_breakdown(req: AIBreakdownReq, user=Depends(get_current_user)):
+    if not user.get("is_pro", False):
+        raise HTTPException(402, "AI task breakdown is a Pro feature. Upgrade to unlock.")
     sys_prompt = (
         "You are a kind, ADHD-friendly assistant. Break a big task into 3-5 tiny, "
         "concrete micro-steps. Each step must be small (≤15 min), specific, and start "
@@ -505,6 +530,148 @@ async def update_settings(req: SettingsReq, user=Depends(get_current_user)):
 @api.get("/")
 async def root():
     return {"message": "FocusFlow API alive"}
+
+# ---------- Free-tier session usage ----------
+@api.get("/focus/usage")
+async def focus_usage(user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    used = await db.focus_sessions.count_documents({
+        "user_id": user["id"],
+        "created_at": {"$gte": today_iso},
+    })
+    limit = 999 if user.get("is_pro", False) else 3
+    return {"used": used, "limit": limit, "is_pro": user.get("is_pro", False)}
+
+# ---------- Booster Packs ----------
+@api.get("/shop/boosters")
+async def list_boosters():
+    return list(BOOSTER_PACKS.values())
+
+class BoosterCheckoutReq(BaseModel):
+    pack_id: str
+    origin_url: str
+
+@api.post("/shop/booster/checkout")
+async def booster_checkout(req: BoosterCheckoutReq, http_request: Request, user=Depends(get_current_user)):
+    pack = BOOSTER_PACKS.get(req.pack_id)
+    if not pack:
+        raise HTTPException(400, "Invalid pack")
+    # MOCK PAYMENT: instantly grant XP (no real Stripe charge for boosters per spec)
+    new_xp = user.get("xp", 0) + pack["xp"]
+    await db.users.update_one({"id": user["id"]}, {"$set": {"xp": new_xp}})
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "kind": "booster_mock",
+        "pack_id": pack["id"],
+        "amount": pack["amount"],
+        "currency": "usd",
+        "xp_granted": pack["xp"],
+        "payment_status": "paid_mock",
+        "created_at": iso(utcnow()),
+    })
+    return {"ok": True, "xp": new_xp, "xp_granted": pack["xp"], "pack": pack}
+
+# ---------- Stripe Pro checkout ----------
+class ProCheckoutReq(BaseModel):
+    origin_url: str
+
+@api.post("/checkout/pro/session")
+async def create_pro_checkout(req: ProCheckoutReq, http_request: Request, user=Depends(get_current_user)):
+    if not STRIPE_API_KEY:
+        raise HTTPException(500, "Stripe not configured")
+    host = str(http_request.base_url).rstrip("/")
+    webhook_url = f"{host}/api/webhook/stripe"
+    sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    success_url = f"{req.origin_url}/dashboard?upgrade=success&session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{req.origin_url}/pricing"
+    metadata = {"user_id": user["id"], "kind": "pro_subscription", "plan": PRO_PLAN["id"]}
+    creq = CheckoutSessionRequest(
+        amount=float(PRO_PLAN["amount"]),
+        currency=PRO_PLAN["currency"],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
+    session = await sc.create_checkout_session(creq)
+    await db.payment_transactions.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "kind": "pro_subscription",
+        "session_id": session.session_id,
+        "amount": float(PRO_PLAN["amount"]),
+        "currency": PRO_PLAN["currency"],
+        "metadata": metadata,
+        "payment_status": "initiated",
+        "created_at": iso(utcnow()),
+    })
+    return {"url": session.url, "session_id": session.session_id}
+
+@api.get("/checkout/status/{session_id}")
+async def checkout_status(session_id: str, http_request: Request, user=Depends(get_current_user)):
+    if not STRIPE_API_KEY:
+        raise HTTPException(500, "Stripe not configured")
+    host = str(http_request.base_url).rstrip("/")
+    sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=f"{host}/api/webhook/stripe")
+    try:
+        status = await sc.get_checkout_status(session_id)
+    except Exception as e:
+        raise HTTPException(500, f"Stripe status check failed: {e}")
+    txn = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if txn and txn.get("payment_status") != "paid":
+        if status.payment_status == "paid":
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "paid", "completed_at": iso(utcnow())}}
+            )
+            if txn.get("kind") == "pro_subscription":
+                await db.users.update_one({"id": txn["user_id"]}, {"$set": {"is_pro": True}})
+    return {
+        "status": status.status,
+        "payment_status": status.payment_status,
+        "amount_total": status.amount_total,
+        "currency": status.currency,
+    }
+
+@api.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    if not STRIPE_API_KEY:
+        raise HTTPException(500, "Stripe not configured")
+    host = str(request.base_url).rstrip("/")
+    sc = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=f"{host}/api/webhook/stripe")
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = await sc.handle_webhook(body, sig)
+    except Exception as e:
+        logging.exception("webhook fail")
+        raise HTTPException(400, f"Bad webhook: {e}")
+    if event.payment_status == "paid" and event.session_id:
+        txn = await db.payment_transactions.find_one({"session_id": event.session_id}, {"_id": 0})
+        if txn and txn.get("payment_status") != "paid":
+            await db.payment_transactions.update_one(
+                {"session_id": event.session_id},
+                {"$set": {"payment_status": "paid", "completed_at": iso(utcnow())}}
+            )
+            if txn.get("kind") == "pro_subscription":
+                await db.users.update_one({"id": txn["user_id"]}, {"$set": {"is_pro": True}})
+    return {"ok": True}
+
+# ---------- Waitlist ----------
+class WaitlistReq(BaseModel):
+    email: EmailStr
+
+@api.post("/waitlist")
+async def join_waitlist(req: WaitlistReq):
+    existing = await db.waitlist.find_one({"email": req.email.lower()})
+    if existing:
+        return {"ok": True, "already": True}
+    await db.waitlist.insert_one({
+        "id": str(uuid.uuid4()),
+        "email": req.email.lower(),
+        "created_at": iso(utcnow()),
+    })
+    return {"ok": True, "already": False}
 
 app.include_router(api)
 
