@@ -134,6 +134,11 @@ export default function Dashboard() {
             <div className="text-xs uppercase tracking-[0.2em] text-[#FFD166]">Primary</div>
             <h2 className="text-3xl sm:text-4xl font-black mt-2 mb-3">Start a focus sprint</h2>
             <p className="text-[#D0C7DB] mb-6 max-w-md">{user?.focus_length || 15} minutes of soft, distraction-free focus. Breathing circle included.</p>
+            {usage && !usage.is_pro && (
+              <div className="text-xs text-[#8D829B] mb-3" data-testid="free-session-counter">
+                <Lock className="inline mr-1" size={11} /> {usage.used}/{usage.limit} free sessions used today · <Link to="/pricing" className="text-[#FFD166] font-bold">upgrade</Link>
+              </div>
+            )}
             <span className="ff-btn-primary inline-flex items-center gap-2 text-base">
               <Play size={18} fill="#1A1625" /> Begin
             </span>

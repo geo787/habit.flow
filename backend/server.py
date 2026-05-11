@@ -466,7 +466,7 @@ async def ai_affirmation(user=Depends(get_current_user)):
     try:
         resp = await chat.send_message(UserMessage(text=f"Write an affirmation for {user.get('name','friend')}."))
         return {"affirmation": resp.strip().strip('"')}
-    except Exception as e:
+    except Exception:
         logging.exception("affirmation failed")
         return {"affirmation": "You showed up today, and that already counts. Be gentle with yourself."}
 
@@ -480,7 +480,7 @@ async def ai_empathy(req: AIEmpathyReq, user=Depends(get_current_user)):
     try:
         resp = await chat.send_message(UserMessage(text=f"This task feels hard: {req.task}"))
         return {"message": resp.strip()}
-    except Exception as e:
+    except Exception:
         logging.exception("empathy failed")
         raise HTTPException(500, "AI empathy unavailable")
 
@@ -557,8 +557,9 @@ async def booster_checkout(req: BoosterCheckoutReq, http_request: Request, user=
     if not pack:
         raise HTTPException(400, "Invalid pack")
     # MOCK PAYMENT: instantly grant XP (no real Stripe charge for boosters per spec)
-    new_xp = user.get("xp", 0) + pack["xp"]
-    await db.users.update_one({"id": user["id"]}, {"$set": {"xp": new_xp}})
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"xp": pack["xp"]}})
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    new_xp = fresh.get("xp", 0)
     await db.payment_transactions.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
@@ -616,6 +617,9 @@ async def checkout_status(session_id: str, http_request: Request, user=Depends(g
     try:
         status = await sc.get_checkout_status(session_id)
     except Exception as e:
+        msg = str(e).lower()
+        if "no such" in msg or "resource_missing" in msg or "not found" in msg:
+            raise HTTPException(404, "Checkout session not found")
         raise HTTPException(500, f"Stripe status check failed: {e}")
     txn = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if txn and txn.get("payment_status") != "paid":

@@ -50,3 +50,12 @@ Build "FocusFlow" — an ADHD-friendly productivity web app. Warm, encouraging, 
 
 ## Test creds
 See /app/memory/test_credentials.md
+
+## Update (2026-02 — Sprint 2)
+- **Audio playback** on /focus: real CDN MP3s for lofi/rain/white-noise (silence = no audio), looping, 40% default volume, slider + mute, stops on timer end / Exit / Reset
+- **XP Booster Packs** in Shop: 3 colored packs (Small Spark +100/$1.99 yellow, Focus Surge +250/$2.99 teal with "⚡ Popular" badge, Flow State +600/$4.99 purple), confirm modal, instant XP grant (mock, no real charge), confetti + "You're unstoppable today! 🚀"
+- **Stripe Pro Checkout** (real test mode `sk_test_emergent`): `/api/checkout/pro/session` → Stripe-hosted checkout, success → polls `/api/checkout/status/{sid}` → sets `is_pro=true`, webhook `/api/webhook/stripe` mirrors; Dashboard shows "Welcome to Pro 🌟" banner; sidebar PRO badge for pro users
+- **Free-tier gating**: 3 focus sessions/day enforced server-side (402 error), AI breakdown 402 for non-pro with "(Pro)" UI label, dashboard shows "0/3 free sessions used today" counter
+- **Pre-launch polish**: index.html — title, meta description, og:title/description/image (Blob mascot), twitter card; Landing page email waitlist (`/api/waitlist` MongoDB collection, duplicate-safe)
+- Tests: 28/29 backend pass; minor Stripe status 404 mapping fixed; XP grant now atomic via `$inc`
+
