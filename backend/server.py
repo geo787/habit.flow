@@ -123,6 +123,7 @@ class TaskUpdate(BaseModel):
     completed: Optional[bool] = None
     microsteps: Optional[List[dict]] = None
     order: Optional[int] = None
+    scheduled_date: Optional[str] = None  # YYYY-MM-DD for planner
 
 class MoodCreate(BaseModel):
     mood: int  # 1..5
@@ -168,6 +169,8 @@ async def register(req: RegisterReq):
         "inventory": [],
         "badges": [],
         "is_pro": False,
+        "language": "en",
+        "last_opened_date": None,
         "created_at": iso(utcnow()),
     }
     await db.users.insert_one(user)
@@ -676,6 +679,152 @@ async def join_waitlist(req: WaitlistReq):
         "created_at": iso(utcnow()),
     })
     return {"ok": True, "already": False}
+
+# ---------- Language ----------
+class LanguageReq(BaseModel):
+    language: str  # en|ro|es|fr
+
+@api.patch("/me/language")
+async def set_language(req: LanguageReq, user=Depends(get_current_user)):
+    if req.language not in ["en", "ro", "es", "fr"]:
+        raise HTTPException(400, "Unsupported language")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"language": req.language}})
+    return {"ok": True, "language": req.language}
+
+# ---------- Morning routine ----------
+class MorningCheckReq(BaseModel):
+    pass
+
+@api.get("/morning/should-show")
+async def morning_should_show(user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    last = user.get("last_opened_date")
+    return {"show": last != today_iso, "today": today_iso}
+
+class MorningEnergyReq(BaseModel):
+    energy: int  # 1..5
+
+@api.post("/morning/energy")
+async def morning_energy(req: MorningEnergyReq, user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    # Save as mood/energy entry (links into existing mood chart)
+    await db.moods.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "mood": req.energy,
+        "energy": req.energy,
+        "note": "morning routine",
+        "created_at": iso(utcnow()),
+    })
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_opened_date": today_iso}}
+    )
+    return {"ok": True}
+
+@api.post("/morning/dismiss")
+async def morning_dismiss(user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_opened_date": today_iso}}
+    )
+    return {"ok": True}
+
+# ---------- Hyperfocus / Zone sessions ----------
+class HyperfocusReq(BaseModel):
+    duration_min: int
+    achievement: Optional[str] = None
+    completed: bool = True
+
+@api.post("/hyperfocus/session")
+async def end_hyperfocus(req: HyperfocusReq, user=Depends(get_current_user)):
+    # Gate behind Pro
+    if not user.get("is_pro", False):
+        raise HTTPException(402, "Zone mode is a Pro feature. Upgrade to unlock.")
+    xp_gain = req.duration_min + (50 if req.completed else 0)
+    sess = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "duration_min": req.duration_min,
+        "achievement": req.achievement,
+        "completed": req.completed,
+        "created_at": iso(utcnow()),
+    }
+    await db.hyperfocus_sessions.insert_one(sess)
+    reward = await award_xp_and_streak(user["id"], xp_gain)
+    sess.pop("_id", None)
+    return {"session": sess, "reward": reward, "xp_gained": xp_gain}
+
+@api.get("/hyperfocus/sessions")
+async def list_hyperfocus(user=Depends(get_current_user)):
+    week_ago = (utcnow() - timedelta(days=7)).isoformat()
+    items = await db.hyperfocus_sessions.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    week_items = [it for it in items if it["created_at"] >= week_ago]
+    total_min = sum(it["duration_min"] for it in week_items)
+    return {"sessions": items[:20], "week_total_min": total_min, "week_count": len(week_items)}
+
+# ---------- Overwhelm mode ----------
+@api.get("/overwhelm/next-tiny")
+async def overwhelm_next_tiny(user=Depends(get_current_user)):
+    # Return the smallest (shortest title) incomplete task
+    tasks = await db.tasks.find(
+        {"user_id": user["id"], "completed": False},
+        {"_id": 0}
+    ).to_list(200)
+    if not tasks:
+        return {"task": None}
+    smallest = min(tasks, key=lambda t: len(t.get("title", "")))
+    return {"task": smallest}
+
+# ---------- Coach Marketplace ----------
+SEED_COACHES = [
+    {"id": "sarah-m", "name": "Sarah M.", "specialty": "ADHD & Executive Function", "price_per_session": 65, "rating": 5.0, "calendly_url": "https://calendly.com/sarah-m/adhd-coaching", "avatar": "🌸"},
+    {"id": "james-k", "name": "James K.", "specialty": "ADHD + Anxiety", "price_per_session": 55, "rating": 4.0, "calendly_url": "https://calendly.com/james-k/adhd-anxiety", "avatar": "🌊"},
+    {"id": "priya-n", "name": "Priya N.", "specialty": "ADHD for Women", "price_per_session": 70, "rating": 5.0, "calendly_url": "https://calendly.com/priya-n/adhd-women", "avatar": "🌷"},
+]
+
+@api.get("/coaches")
+async def list_coaches():
+    # Seed + any approved coach applications
+    approved = await db.coaches.find(
+        {"status": "approved"}, {"_id": 0}
+    ).to_list(100)
+    return {"coaches": SEED_COACHES + approved}
+
+class CoachApplyReq(BaseModel):
+    name: str
+    email: EmailStr
+    credentials: str
+    specialty: str
+    calendly_url: str
+    agree_fee: bool
+
+@api.post("/coaches/apply")
+async def apply_coach(req: CoachApplyReq):
+    if not req.agree_fee:
+        raise HTTPException(400, "Please agree to the listing fee")
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": req.name,
+        "email": req.email.lower(),
+        "credentials": req.credentials,
+        "specialty": req.specialty,
+        "calendly_url": req.calendly_url,
+        "status": "pending",
+        "created_at": iso(utcnow()),
+    }
+    await db.coaches.insert_one(doc)
+    doc.pop("_id", None)
+    return {"ok": True, "application": doc}
+
+# ---------- Planner ----------
+@api.get("/planner/week")
+async def planner_week(user=Depends(get_current_user)):
+    tasks = await db.tasks.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    return {"tasks": tasks}
 
 app.include_router(api)
 

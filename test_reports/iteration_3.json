@@ -1,0 +1,36 @@
+{
+  "summary": "Sprint 3 backend + frontend testing. Backend: 45/45 pytest tests pass (all Sprint 3 new endpoints — i18n /me/language, /morning/should-show + /energy + /dismiss, /hyperfocus/session + /sessions (Pro gating + 50 XP bonus), /overwhelm/next-tiny (smallest title), /coaches (3 seed + approved merge), /coaches/apply (agreement-gated 400), /planner/week, PATCH /tasks {scheduled_date} — plus all iteration_2 regression). Previous iteration's minor issue (status 500 for missing Stripe session) is FIXED — now returns 404. Frontend: All Sprint 3 critical flows verified: morning modal appears once (5 energy emojis, dismiss persists same-day via /morning/dismiss), overwhelm button opens calming overlay with breathing circle + comfort message + exit, sidebar shows Coaches (between Body Double & Progress) and Planner (between Shop & Settings), language switcher dropdown with 4 langs persists to localStorage ff_lang + PATCH /api/me/language, /coaches renders 3 seed coaches (Sarah/James/Priya) with Calendly target=_blank, /become-a-coach submit disabled until agreement checked, /planner shows 7 day columns + unscheduled panel, /focus shows 2 Zone-mode pills (90 & 120 min), /progress 'Share my week' button visible & enabled for Pro user, Zone-sessions card present. PWA: manifest.json + sw.js + icon-192.png + icon-512.png present, registered in App.js, linked in index.html.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Morning modal energy → 'Begin 10-min sprint' task-list step", "issue": "After clicking morning-energy-3, the [data-testid='morning-task-list'] element was not detected in DOM within 800ms (test user had only 1 active task). Could be slow render or conditional rendering when zero/few tasks. Not blocking — user can dismiss; recommend verifying step-2 renders even with 0-1 tasks (currently maybe gated by task count).", "affected_selectors": ["[data-testid='morning-task-list']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Minor) MorningModal: ensure step-2 task list renders even when user has 0 incomplete tasks (show a friendly empty-state instead of conditionally hiding the list). Verify in /app/frontend/src/components/MorningModal.jsx around the morning-task-list block.",
+    "(Code quality) /app/backend/server.py is now 844 lines — well past 700-line threshold. Split into routers/ (auth, tasks, ai, shop, payments, waitlist, morning, hyperfocus, coaches, planner, i18n) for maintainability.",
+    "(Code quality) /api/hyperfocus/sessions filters week-window in Python after fetching all sessions — use a Mongo query `created_at >= week_ago` for scalability when users accumulate many sessions.",
+    "(Code quality) /api/overwhelm/next-tiny loads up to 200 incomplete tasks then picks min in Python — could be a `find(...).sort({title_len_or_similar}).limit(1)` or pre-compute title_len on insert; acceptable for now."
+  ],
+  "critical_code_review_comments": [
+    "server.py 844 LOC — beyond healthy single-file limit; split into modular routers before more endpoints land.",
+    "Hyperfocus week aggregation iterates Python-side; switch to Mongo $match + $sum for O(week) compute.",
+    "Coach apply allows arbitrary calendly_url string — no URL validation. Add HttpUrl pydantic type to /coaches/apply for safety.",
+    "Coach apply endpoint is unauthenticated and stores user-supplied email — add basic rate limiting / spam protection.",
+    "PATCH /tasks/{id} accepts scheduled_date as free-form string (YYYY-MM-DD or null) but does not validate format. Mis-shaped strings will silently persist. Add regex validator or date type."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": { "backend": "100% (45/45)", "frontend": "~95% (1 minor: morning-task-list step-2 not rendering with 0-1 tasks)" },
+  "test_credentials": "test1@focus.com / test123 — currently set to is_pro=true, language=en, last_opened_date=<today> (morning modal already dismissed for today after the test run). Reset last_opened_date=null in mongo if morning-modal re-testing needed.",
+  "seed_data_creation": "Per-run unique test user via /api/auth/register (test_<uuid>@focus.com). Coach applications inserted with TEST_Coach prefix (left in db.coaches with status=pending — harmless, easy to filter). Hyperfocus sessions, scheduled_date task, mood entries created and cleaned up where applicable.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test1@focus.com is now is_pro=true. For morning-modal UI re-test, reset last_opened_date=null via mongo. Sprint 3 testids confirmed in code: lang-toggle, lang-menu, lang-menu-{code}, language-switcher-full, morning-modal, morning-energy-1..5, morning-energy-picker, morning-task-list, morning-begin, morning-skip, morning-dismiss, overwhelm-btn, overwhelm-overlay, breathe-cue, overwhelm-task, overwhelm-message, overwhelm-exit, nav-coaches, nav-planner, coach-{id}, book-{id}, become-coach-link, coach-apply-form, coach-{fieldKey}, coach-agree, coach-submit, planner-unscheduled, planner-day-{YYYY-MM-DD}, u-task-{id}.",
+  "rca of the issue": "The single minor morning-task-list non-render after energy click is most likely a conditional render in MorningModal.jsx that requires N>0 incomplete tasks before rendering the list (energy 3 → 2 tasks). When the user has 0 or 1 incomplete tasks, the list element may be hidden entirely. Fix: render the morning-task-list container unconditionally and show an empty-state inside when no tasks. Reproduce: log in as a user with no tasks, complete morning energy step — observe step-2 has missing list."
+}

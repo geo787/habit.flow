@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 export default function Settings() {
+  const { t } = useTranslation();
   const { user, refresh } = useAuth();
   const [reduceMotion, setReduceMotion] = useState(user?.settings?.reduce_motion || false);
   const [highContrast, setHighContrast] = useState(user?.settings?.high_contrast || false);
@@ -23,7 +26,7 @@ export default function Settings() {
         sound,
       });
       await refresh();
-      toast.success("Saved gently 💛");
+      toast.success(t("settings.saved"));
     } catch {
       toast.error("Could not save");
     }
@@ -31,15 +34,15 @@ export default function Settings() {
 
   return (
     <div className="p-6 md:p-12 max-w-2xl">
-      <h1 className="text-3xl sm:text-4xl font-black mb-2">Settings</h1>
-      <p className="text-[#D0C7DB] mb-8">Make this app feel like yours.</p>
+      <h1 className="text-3xl sm:text-4xl font-black mb-2">{t("settings.title")}</h1>
+      <p className="text-[#D0C7DB] mb-8">{t("settings.subtitle")}</p>
 
       <div className="space-y-4">
-        <Toggle label="Reduce motion" desc="Calmer animations everywhere." testid="toggle-reduce-motion" value={reduceMotion} onChange={setReduceMotion} />
-        <Toggle label="High contrast" desc="Boost readability for tired eyes." testid="toggle-high-contrast" value={highContrast} onChange={setHighContrast} />
+        <Toggle label={t("settings.reduceMotion")} desc={t("settings.reduceMotionDesc")} testid="toggle-reduce-motion" value={reduceMotion} onChange={setReduceMotion} />
+        <Toggle label={t("settings.highContrast")} desc={t("settings.highContrastDesc")} testid="toggle-high-contrast" value={highContrast} onChange={setHighContrast} />
 
         <div className="ff-card p-5">
-          <div className="font-bold mb-2">Default focus length</div>
+          <div className="font-bold mb-2">{t("settings.defaultFocus")}</div>
           <div className="flex flex-wrap gap-2">
             {[10, 15, 25, 45].map((m) => (
               <button
@@ -47,13 +50,13 @@ export default function Settings() {
                 data-testid={`set-focus-${m}`}
                 onClick={() => setFocusLength(m)}
                 className={`px-5 py-2 rounded-full ${focusLength === m ? "bg-[#FFD166] text-[#1A1625] font-extrabold" : "ff-btn-ghost"}`}
-              >{m} min</button>
+              >{m} {t("common.minutes")}</button>
             ))}
           </div>
         </div>
 
         <div className="ff-card p-5">
-          <div className="font-bold mb-2">Default sound</div>
+          <div className="font-bold mb-2">{t("settings.defaultSound")}</div>
           <div className="flex flex-wrap gap-2">
             {["lofi", "rain", "white-noise", "silence"].map((s) => (
               <button
@@ -66,7 +69,13 @@ export default function Settings() {
           </div>
         </div>
 
-        <button data-testid="save-settings" onClick={save} className="ff-btn-primary">Save changes</button>
+        <div className="ff-card p-5" data-testid="settings-language">
+          <div className="font-bold mb-1">{t("settings.language")}</div>
+          <div className="text-sm text-[#8D829B] mb-4">{t("settings.languageDesc")}</div>
+          <LanguageSwitcher compact={false} />
+        </div>
+
+        <button data-testid="save-settings" onClick={save} className="ff-btn-primary">{t("settings.saveChanges")}</button>
       </div>
     </div>
   );
