@@ -86,7 +86,9 @@ export default function MorningModal() {
             <p className="text-[#D0C7DB] mb-5">{t(subtitleKey)}</p>
             <ul className="space-y-2 mb-6" data-testid="morning-task-list">
               {tasks.length === 0 ? (
-                <li className="text-[#8D829B] text-sm">{t("morning.lowRest")}</li>
+                <li className="ff-card p-3 bg-[#1A1625]/60 text-[#8D829B] text-sm italic" data-testid="morning-task-empty">
+                  {t("morning.lowRest")}
+                </li>
               ) : tasks.map((task) => (
                 <li key={task.id} className="ff-card p-3 flex items-center gap-2 bg-[#1A1625]/60">
                   <span className="text-xl">{task.emoji_tag || "📝"}</span>

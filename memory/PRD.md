@@ -59,3 +59,16 @@ See /app/memory/test_credentials.md
 - **Pre-launch polish**: index.html — title, meta description, og:title/description/image (Blob mascot), twitter card; Landing page email waitlist (`/api/waitlist` MongoDB collection, duplicate-safe)
 - Tests: 28/29 backend pass; minor Stripe status 404 mapping fixed; XP grant now atomic via `$inc`
 
+
+## Update (2026-02 — Sprint 3, MEGA-sprint)
+- **i18n (4 languages)** — en/ro/es/fr with i18next + browser-languagedetector; localStorage `ff_lang` + MongoDB `user.language` sync; navigator auto-detect on first visit; globe dropdown in sidebar header + mobile top bar; full list in Settings (flag + name + check); PATCH /api/me/language endpoint
+- **Overwhelm mode** — soft-red dashboard button → full-screen #0f0e1a calming overlay with breathing circle (4s cycle), cycling cues (breathe in/hold/out), smallest incomplete task title via /api/overwhelm/next-tiny, comfort message, exit; all i18n'd; no XP/streak shown
+- **Hyperfocus / Zone mode** — 90 & 120 min Zone pills on /focus (Pro-gated 402), deep purple #7F77DD accent, minimal UI when running (just timer + breathing dot + exit), summary card with achievement input on completion, +50 XP bonus, hyperfocus_sessions collection, /progress shows Zone sessions card with weekly total hours/count
+- **Morning routine** — full-screen modal once per day (last_opened_date check); 5 energy emojis 😴💤😐⚡🔥 → maps to 1/2/3 incomplete tasks shown; "Begin 10-min sprint" or skip; dismiss persists; logs as mood entry. Empty-state fix applied per test agent feedback.
+- **Media Session API** — /focus sets `navigator.mediaSession.metadata = "FocusFlow — [sound]"` + play/pause action handlers so OS notification bar shows controls
+- **Share card** — /progress "Share my week" button (Pro-gated) → html2canvas modal renders 800x450 dark purple card with FF logo, weekly stats (tasks, focus time, streak, level), Blob mascot, download PNG + copy to clipboard
+- **PWA** — public/manifest.json + sw.js (caches landing/dashboard/focus/tasks, never API), icon-192.png + icon-512.png generated via PIL, registered in App.js (production only), `beforeinstallprompt` banner after 3rd visit with install/dismiss buttons
+- **Coach Marketplace** — /coaches in sidebar between BodyDouble & Progress (UserCheck icon), 3 seed coaches (Sarah/James/Priya with avatars + ratings + Calendly links opening in new tab); /become-a-coach form with 5 fields + $29/mo fee agreement; POST /api/coaches/apply → coaches collection with status=pending
+- **Weekly Planner** — /planner in sidebar between Shop & Settings (Calendar icon), 7-column Mon-Sun grid + unscheduled left panel, HTML5 drag-drop, max 3 tasks/day shown, today highlighted yellow, yesterday's uncompleted auto-roll over with "Rolled over — no guilt 💛" label, scheduled_date field on tasks
+- Tests: **45/45 backend pass** (up from 28/29). 100% backend. Frontend critical paths all verified.
+
