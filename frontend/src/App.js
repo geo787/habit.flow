@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Layout from "./components/Layout";
 import MorningModal from "./components/MorningModal";
 import PWAInstallBanner from "./components/PWAInstallBanner";
+import BlobChat from "./components/BlobChat";
+import KeyboardShortcuts from "./components/KeyboardShortcuts";
 import Landing from "./pages/Landing";
 import AuthPage from "./pages/AuthPage";
 import Onboarding from "./pages/Onboarding";
@@ -58,6 +60,8 @@ function Shell({ children }) {
       <Layout>{children}</Layout>
       <MorningModal />
       <PWAInstallBanner />
+      <BlobChat />
+      <KeyboardShortcuts />
     </>
   );
 }

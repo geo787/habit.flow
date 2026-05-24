@@ -10,6 +10,13 @@ export default function Landing() {
   const [busy, setBusy] = useState(false);
   const [joined, setJoined] = useState(false);
 
+  // Capture ?ref=CODE from URL
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) localStorage.setItem("focusflow_ref", ref.toUpperCase());
+  }
+
   const joinWaitlist = async (e) => {
     e.preventDefault();
     if (!email.trim()) return;

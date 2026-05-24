@@ -35,7 +35,9 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (email, password, name) => {
-    const { data } = await api.post("/auth/register", { email, password, name });
+    const referral = localStorage.getItem("focusflow_ref");
+    const { data } = await api.post("/auth/register", { email, password, name, referral_code: referral });
+    localStorage.removeItem("focusflow_ref");
     localStorage.setItem("ff_token", data.token);
     await refresh();
     return data.user;

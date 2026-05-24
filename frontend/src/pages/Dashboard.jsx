@@ -3,15 +3,30 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import FocusBuddy from "../components/FocusBuddy";
+import BlobMood from "../components/BlobMood";
 import OverwhelmOverlay from "../components/OverwhelmOverlay";
-import { Flame, Users, Sparkles, Play, Heart, X, Lock, CloudRain } from "lucide-react";
+import Reflection from "../components/Reflection";
+import { Flame, Users, Sparkles, Play, Heart, X, Lock, CloudRain, Moon } from "lucide-react";
 import { toast } from "sonner";
 
 const moodEmojis = ["😩", "😕", "😐", "🙂", "🔥"];
 
+function greetingKey(hour) {
+  if (hour >= 6 && hour < 12) return "greetingMorning";
+  if (hour >= 12 && hour < 17) return "greetingAfternoon";
+  if (hour >= 17 && hour < 21) return "greetingEvening";
+  return "greetingNight";
+}
+
+const GREETINGS = {
+  greetingMorning: { en: "Good morning, {name} ☀️", ro: "Bună dimineața, {name} ☀️", es: "Buenos días, {name} ☀️", fr: "Bonjour {name} ☀️" },
+  greetingAfternoon: { en: "Good afternoon, {name}", ro: "Bună după-amiaza, {name}", es: "Buenas tardes, {name}", fr: "Bon après-midi {name}" },
+  greetingEvening: { en: "Good evening, {name} 🌙", ro: "Bună seara, {name} 🌙", es: "Buenas noches, {name} 🌙", fr: "Bonsoir {name} 🌙" },
+  greetingNight: { en: "Still up, {name}? The night owls get things done too 🌟", ro: "Încă treaz, {name}? Și bufnițele de noapte reușesc 🌟", es: "¿Aún despierto, {name}? Los búhos también logran cosas 🌟", fr: "Encore là {name} ? Les noctambules accomplissent aussi 🌟" }
+};
+
 export default function Dashboard() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, refresh } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [affirmation, setAffirmation] = useState("");
@@ -22,21 +37,31 @@ export default function Dashboard() {
   const [energy, setEnergy] = useState(3);
   const [showProBanner, setShowProBanner] = useState(false);
   const [overwhelm, setOverwhelm] = useState(false);
+  const [reflectOpen, setReflectOpen] = useState(false);
+  const [blobMood, setBlobMood] = useState("neutral");
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
   useEffect(() => {
     (async () => {
-      const [tk, aff, r, u] = await Promise.all([
+      const [tk, aff, r, u, m] = await Promise.all([
         api.get("/tasks"),
         api.get("/ai/affirmation").catch(() => ({ data: { affirmation: "You showed up — that already counts." } })),
         api.get("/body-double/rooms"),
         api.get("/focus/usage"),
+        api.get("/mood").catch(() => ({ data: [] })),
       ]);
       setTasks(tk.data);
       setAffirmation(aff.data.affirmation);
       setRooms(r.data);
       setUsage(u.data);
+      // Compute Blob mood from latest mood entry
+      const latest = m.data[0];
+      if (latest) {
+        if (latest.energy <= 2) setBlobMood("low-energy");
+        else if (latest.energy >= 4) setBlobMood("high-energy");
+        else setBlobMood("neutral");
+      }
     })();
   }, []);
 
@@ -64,11 +89,28 @@ export default function Dashboard() {
   const todayTasks = tasks.filter((tk) => !tk.completed).slice(0, 3);
   const lvl = user?.level_info;
 
+  // Time-based greeting
+  const hour = new Date().getHours();
+  const gk = greetingKey(hour);
+  const lang = (i18n.language || "en").split("-")[0];
+  const greeting = (GREETINGS[gk]?.[lang] || GREETINGS[gk]?.en || "{name}").replace("{name}", user?.name || "");
+
+  // Daily total time budget
+  const totalMinutes = tasks.reduce((sum, tk) => {
+    const stepsTotal = (tk.microsteps || []).reduce((s, ms) => s + (ms.minutes || 0), 0);
+    return sum + (tk.completed ? 0 : stepsTotal);
+  }, 0);
+  const budgetColor = totalMinutes < 240 ? "#45B69C" : totalMinutes <= 360 ? "#EF9F27" : "#D85A30";
+  const budgetMsg = totalMinutes > 360 ? "That's a lot. Maybe move some to tomorrow? 💛" : null;
+
   const submitMood = async () => {
     try {
       await api.post("/mood", { mood, energy });
       toast.success("💛");
       setMoodOpen(false);
+      if (energy <= 2) setBlobMood("low-energy");
+      else if (energy >= 4) setBlobMood("high-energy");
+      else setBlobMood("neutral");
       await refresh();
     } catch {
       toast.error("Could not log mood");
@@ -77,7 +119,8 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 md:p-12 max-w-6xl">
-      {overwhelm && <OverwhelmOverlay onClose={() => setOverwhelm(false)} />}
+      {overwhelm && <OverwhelmOverlay onClose={() => { setOverwhelm(false); setBlobMood("neutral"); }} />}
+      {reflectOpen && <Reflection onClose={() => setReflectOpen(false)} />}
 
       {showProBanner && (
         <div data-testid="pro-banner" className="ff-card p-5 mb-6 bg-gradient-to-r from-[#FFD166]/15 to-[#B19CD9]/15 ring-1 ring-[#FFD166] flex items-center gap-3">
@@ -92,8 +135,7 @@ export default function Dashboard() {
 
       <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
         <div>
-          <div className="text-[#8D829B] text-sm">{t("dashboard.welcomeBack")}</div>
-          <h1 className="text-3xl sm:text-4xl font-black">{t("dashboard.hi")} {user?.name} 💛</h1>
+          <h1 className="text-3xl sm:text-4xl font-black" data-testid="time-greeting">{greeting}</h1>
           {affirmation && <p className="text-[#D0C7DB] mt-2 max-w-xl italic" data-testid="daily-affirmation">"{affirmation}"</p>}
         </div>
         <div className="ff-card px-5 py-3 flex items-center gap-3" data-testid="streak-badge">
@@ -137,19 +179,25 @@ export default function Dashboard() {
             <span className="ff-btn-primary inline-flex items-center gap-2 text-base"><Play size={18} fill="#1A1625" /> {t("common.begin")}</span>
           </div>
         </button>
-        <div className="ff-card p-6 flex flex-col items-center text-center">
-          <FocusBuddy size={100} />
-          <div className="font-bold mt-3">{user?.buddy === "cat" ? "Cat" : user?.buddy === "fox" ? "Fox" : "Blob"} {t("dashboard.buddyRoot")}</div>
+        <div className="ff-card p-6 flex flex-col items-center text-center" data-testid="blob-card">
+          <BlobMood size={100} mood={blobMood} />
+          <div className="font-bold mt-3">Blob {t("dashboard.buddyRoot")}</div>
           <div className="text-sm text-[#8D829B] mt-1">"{t("dashboard.buddyQuote")}"</div>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="ff-card p-6 lg:col-span-2" data-testid="today-tasks">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <h3 className="font-extrabold text-xl">{t("dashboard.todayTasks")}</h3>
+            {totalMinutes > 0 && (
+              <div className="text-xs font-bold" style={{ color: budgetColor }} data-testid="daily-total-time">
+                Today: ~{Math.floor(totalMinutes/60)}h {totalMinutes%60}min planned
+              </div>
+            )}
             <Link to="/tasks" className="text-sm text-[#FFD166]">{t("dashboard.openBrainDump")}</Link>
           </div>
+          {budgetMsg && <div className="text-xs text-[#D85A30] mb-3 italic">{budgetMsg}</div>}
           {todayTasks.length === 0 ? (
             <div className="text-[#8D829B] py-8 text-center">
               {t("dashboard.noTasks")} <Link to="/tasks" className="text-[#FFD166] font-bold">{t("dashboard.addTinyOne")}</Link>.
@@ -201,13 +249,21 @@ export default function Dashboard() {
             <div className="text-2xl font-black text-[#45B69C]">{rooms.total_live.toLocaleString()}</div>
             <div className="text-xs text-[#8D829B]">{t("dashboard.peopleFocusing")}</div>
           </Link>
+
+          {/* Reflect on today */}
+          <button data-testid="reflect-card" onClick={() => setReflectOpen(true)} className="ff-card p-6 block hover:bg-[#352D47] text-left w-full">
+            <div className="flex items-center gap-2 mb-2">
+              <Moon size={18} className="text-[#B19CD9]" />
+              <span className="font-extrabold">Reflect on today →</span>
+            </div>
+            <div className="text-xs text-[#8D829B]">2-min check-in · +10 XP</div>
+          </button>
         </div>
       </div>
 
-      {/* Overwhelm button */}
       <button
         data-testid="overwhelm-btn"
-        onClick={() => setOverwhelm(true)}
+        onClick={() => { setOverwhelm(true); setBlobMood("overwhelm"); }}
         className="mt-8 w-full ff-card p-5 flex items-center gap-3 justify-center hover:bg-[#352D47] transition-all border border-[#E07A5F]/30"
         style={{ background: "rgba(224, 122, 95, 0.06)" }}
       >
@@ -217,3 +273,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

@@ -8,13 +8,15 @@ export default function PWAInstallBanner() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    const visits = parseInt(localStorage.getItem("ff_visits") || "0", 10) + 1;
-    localStorage.setItem("ff_visits", String(visits));
+    const visits = parseInt(localStorage.getItem("ff_visit_count") || "0", 10) + 1;
+    localStorage.setItem("ff_visit_count", String(visits));
+    const dismissedAt = parseInt(localStorage.getItem("ff_pwa_dismissed_at") || "0", 10);
+    const dismissedRecent = dismissedAt && (Date.now() - dismissedAt) < 7 * 24 * 60 * 60 * 1000;
 
     const handler = (e) => {
       e.preventDefault();
       setDeferred(e);
-      if (visits >= 3 && !localStorage.getItem("ff_pwa_dismissed")) {
+      if (visits >= 3 && !dismissedRecent) {
         setShow(true);
       }
     };
@@ -31,7 +33,7 @@ export default function PWAInstallBanner() {
   };
 
   const dismiss = () => {
-    localStorage.setItem("ff_pwa_dismissed", "1");
+    localStorage.setItem("ff_pwa_dismissed_at", String(Date.now()));
     setShow(false);
   };
 

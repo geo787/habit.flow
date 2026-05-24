@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
-import { Award, Flame, TrendingUp, Share2, Zap } from "lucide-react";
+import { Award, Flame, TrendingUp, Share2, Zap, Sparkles, RefreshCw } from "lucide-react";
 import ShareCard from "../components/ShareCard";
 
 const allBadges = [
@@ -10,7 +10,14 @@ const allBadges = [
   { slug: "streak_5", name: "5-Day Streak", emoji: "🔥" },
   { slug: "streak_14", name: "Two Week Hero", emoji: "⭐" },
   { slug: "task_slayer", name: "Task Slayer", emoji: "⚔️" },
+  { slug: "community_builder", name: "Community Builder", emoji: "🤝" },
 ];
+
+const INSIGHT_STYLES = {
+  positive: { bg: "rgba(69,182,156,0.10)", ring: "#45B69C" },
+  pattern: { bg: "rgba(177,156,217,0.10)", ring: "#B19CD9" },
+  tip: { bg: "rgba(255,209,102,0.10)", ring: "#FFD166" },
+};
 
 export default function ProgressPage() {
   const { t } = useTranslation();
@@ -19,15 +26,35 @@ export default function ProgressPage() {
   const [moods, setMoods] = useState([]);
   const [zone, setZone] = useState({ week_total_min: 0, week_count: 0, sessions: [] });
   const [shareOpen, setShareOpen] = useState(false);
+  const [insights, setInsights] = useState(null);
+  const [insightsLocked, setInsightsLocked] = useState(false);
+  const [unlockDays, setUnlockDays] = useState(0);
+  const [reflections, setReflections] = useState([]);
+  const [insightsBusy, setInsightsBusy] = useState(false);
+
+  const loadInsights = async () => {
+    setInsightsBusy(true);
+    try {
+      const { data } = await api.get("/insights");
+      if (data.locked) {
+        setInsightsLocked(true);
+        setUnlockDays(data.unlocks_in_days);
+      } else {
+        setInsights(data.insights);
+      }
+    } catch {}
+    finally { setInsightsBusy(false); }
+  };
 
   useEffect(() => {
     api.get("/progress/summary").then(({ data }) => setSummary(data));
     api.get("/mood").then(({ data }) => setMoods(data.slice(0, 14).reverse()));
     api.get("/hyperfocus/sessions").then(({ data }) => setZone(data)).catch(() => {});
+    api.get("/reflections").then(({ data }) => setReflections(data)).catch(() => {});
+    loadInsights();
   }, []);
 
   const earnedSlugs = new Set((summary?.badges || []).map((b) => b.slug));
-
   const zoneHours = Math.floor(zone.week_total_min / 60);
   const zoneMins = zone.week_total_min % 60;
 
@@ -65,6 +92,38 @@ export default function ProgressPage() {
           <div className="text-3xl font-black">{summary?.tasks_completed_total ?? 0}</div>
           <div className="text-xs text-[#8D829B] mt-1">{t("progress.tasksCompleted")}</div>
         </div>
+      </div>
+
+      {/* AI Insights */}
+      <div className="ff-card p-6 mb-8" data-testid="ai-insights">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="text-[#FFD166]" size={18} />
+            <h2 className="font-extrabold text-xl">AI Insights</h2>
+          </div>
+          {!insightsLocked && insights && (
+            <button data-testid="refresh-insights" onClick={loadInsights} disabled={insightsBusy} className="ff-btn-ghost text-xs flex items-center gap-1 disabled:opacity-50">
+              <RefreshCw size={12} className={insightsBusy ? "animate-spin" : ""} /> {insightsBusy ? "thinking…" : "Refresh"}
+            </button>
+          )}
+        </div>
+        {insightsLocked ? (
+          <div className="text-[#8D829B] text-sm">Keep going! Insights unlock in {unlockDays} day{unlockDays !== 1 ? "s" : ""} 🌱</div>
+        ) : !insights ? (
+          <div className="text-[#8D829B] text-sm">{insightsBusy ? "Analyzing your last 30 days…" : "—"}</div>
+        ) : (
+          <div className="grid sm:grid-cols-3 gap-3">
+            {insights.map((it, i) => {
+              const s = INSIGHT_STYLES[it.type] || INSIGHT_STYLES.tip;
+              return (
+                <div key={i} data-testid={`insight-${i}`} className="p-4 rounded-2xl" style={{ background: s.bg, border: `1px solid ${s.ring}33` }}>
+                  <div className="text-2xl mb-1">{it.emoji}</div>
+                  <div className="text-sm text-[#D0C7DB]">{it.text}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Zone sessions */}
@@ -109,7 +168,7 @@ export default function ProgressPage() {
 
       <div className="ff-card p-6 mb-8">
         <h2 className="font-extrabold text-xl mb-4">{t("progress.badges")}</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="badges-grid">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="badges-grid">
           {allBadges.map((b) => {
             const earned = earnedSlugs.has(b.slug);
             return (
@@ -121,6 +180,26 @@ export default function ProgressPage() {
             );
           })}
         </div>
+      </div>
+
+      {/* Reflections journey */}
+      <div className="ff-card p-6 mb-8" data-testid="reflections-timeline">
+        <h2 className="font-extrabold text-xl mb-4">Your journey</h2>
+        {reflections.length === 0 ? (
+          <div className="text-[#8D829B] text-sm">Reflect at the end of a day to see your journey here.</div>
+        ) : (
+          <ul className="space-y-3">
+            {reflections.slice(0, 10).map((r) => (
+              <li key={r.id} className="flex gap-3 items-start" data-testid={`reflection-${r.id}`}>
+                <div className="text-2xl">{["😩","😕","😐","🙂","🔥"][r.end_mood - 1] || "💛"}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-[#8D829B]">{r.date}</div>
+                  <div className="text-sm text-[#D0C7DB] mt-0.5 line-clamp-2">{r.accomplishments}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="ff-card p-6 bg-gradient-to-br from-[#352D47] to-[#2A2438]">

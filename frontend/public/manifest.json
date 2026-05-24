@@ -1,7 +1,7 @@
 {
   "name": "FocusFlow",
   "short_name": "FocusFlow",
-  "description": "ADHD-friendly productivity that feels like a warm hug",
+  "description": "ADHD-friendly productivity — a warm hug, not a lecture",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0e1a",

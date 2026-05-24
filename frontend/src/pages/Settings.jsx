@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { toast } from "sonner";
+import { Copy, Users } from "lucide-react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 
 export default function Settings() {
@@ -75,7 +76,39 @@ export default function Settings() {
           <LanguageSwitcher compact={false} />
         </div>
 
+        <ReferralCard />
+
         <button data-testid="save-settings" onClick={save} className="ff-btn-primary">{t("settings.saveChanges")}</button>
+      </div>
+    </div>
+  );
+}
+
+function ReferralCard() {
+  const [stats, setStats] = useState(null);
+  useEffect(() => { api.get("/referral/stats").then(({ data }) => setStats(data)); }, []);
+  if (!stats?.code) return null;
+  const link = `${window.location.origin}/?ref=${stats.code}`;
+  const text = `Try FocusFlow — productivity that feels like a warm hug. ${link}`;
+  const progress = Math.min(1, stats.count / stats.target);
+  return (
+    <div className="ff-card p-5" data-testid="settings-referral">
+      <div className="flex items-center gap-2 mb-1"><Users size={16} className="text-[#FFD166]" /><div className="font-bold">Invite Friends</div></div>
+      <div className="text-sm text-[#8D829B] mb-4">Share FocusFlow. You both get XP.</div>
+      <div className="flex items-center gap-2 mb-3">
+        <input data-testid="referral-link" readOnly value={link} className="ff-input flex-1 text-xs" />
+        <button data-testid="copy-referral" onClick={() => { navigator.clipboard?.writeText(link); toast.success("Copied 💛"); }} className="ff-btn-ghost text-xs">
+          <Copy size={12} />
+        </button>
+      </div>
+      <div className="text-xs text-[#D0C7DB] mb-2" data-testid="referral-stats">{stats.count} friends invited · {stats.count} joined</div>
+      <div className="h-2 bg-[#1A1625] rounded-full overflow-hidden mb-1">
+        <div className="h-full bg-[#FFD166]" style={{ width: `${progress * 100}%` }} />
+      </div>
+      <div className="text-[10px] text-[#8D829B] mb-3">{stats.count}/{stats.target} for 1 free Pro month</div>
+      <div className="flex gap-2 flex-wrap">
+        <a data-testid="share-wa" target="_blank" rel="noopener noreferrer" href={`https://wa.me/?text=${encodeURIComponent(text)}`} className="ff-btn-ghost text-xs">WhatsApp</a>
+        <a data-testid="share-li" target="_blank" rel="noopener noreferrer" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(link)}`} className="ff-btn-ghost text-xs">LinkedIn</a>
       </div>
     </div>
   );

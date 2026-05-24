@@ -8,6 +8,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Literal
 import uuid
+import secrets
+import string
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
@@ -100,6 +102,7 @@ class RegisterReq(BaseModel):
     email: EmailStr
     password: str
     name: str
+    referral_code: Optional[str] = None
 
 class LoginReq(BaseModel):
     email: EmailStr
@@ -145,6 +148,10 @@ class AIEmpathyReq(BaseModel):
 class ShopPurchaseReq(BaseModel):
     item_id: str
 
+def gen_referral_code() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    return "FF" + "".join(secrets.choice(alphabet) for _ in range(4))
+
 # ---------- Auth ----------
 @api.post("/auth/register")
 async def register(req: RegisterReq):
@@ -152,12 +159,37 @@ async def register(req: RegisterReq):
     if existing:
         raise HTTPException(400, "Email already registered")
     user_id = str(uuid.uuid4())
+    # Unique referral code
+    while True:
+        code = gen_referral_code()
+        if not await db.users.find_one({"referral_code": code}):
+            break
+    # Handle referral
+    referred_by = None
+    welcome_xp = 0
+    if req.referral_code:
+        referrer = await db.users.find_one({"referral_code": req.referral_code.upper()})
+        if referrer:
+            referred_by = referrer["id"]
+            welcome_xp = 50
+            new_badges = list(referrer.get("badges", []))
+            if not any(b["slug"] == "community_builder" for b in new_badges):
+                new_badges.append({"slug": "community_builder", "name": "Community Builder", "earned_at": iso(utcnow())})
+            new_count = referrer.get("referral_count", 0) + 1
+            update = {
+                "$inc": {"xp": 200, "referral_xp_earned": 200, "referral_count": 1},
+                "$set": {"badges": new_badges},
+            }
+            if new_count >= 5 and not referrer.get("is_pro", False):
+                update["$set"]["is_pro"] = True
+                update["$set"]["pro_until"] = iso(utcnow() + timedelta(days=30))
+            await db.users.update_one({"id": referrer["id"]}, update)
     user = {
         "id": user_id,
         "email": req.email.lower(),
         "name": req.name,
         "password_hash": hash_password(req.password),
-        "xp": 0,
+        "xp": welcome_xp,
         "streak": 0,
         "grace_days_used": 0,
         "last_active_date": None,
@@ -165,12 +197,18 @@ async def register(req: RegisterReq):
         "focus_length": 15,
         "struggles": [],
         "onboarded": False,
-        "settings": {"reduce_motion": False, "high_contrast": False, "sound": "lofi", "notif_window": [10, 18]},
+        "settings": {"reduce_motion": False, "high_contrast": False, "sound": "lofi", "notif_window": [10, 18], "reflection_time": "20:00", "weekly_email": True},
         "inventory": [],
         "badges": [],
         "is_pro": False,
         "language": "en",
         "last_opened_date": None,
+        "referral_code": code,
+        "referred_by": referred_by,
+        "referral_count": 0,
+        "referral_xp_earned": 0,
+        "daily_affirmation": None,
+        "daily_affirmation_date": None,
         "created_at": iso(utcnow()),
     }
     await db.users.insert_one(user)
@@ -437,41 +475,63 @@ def _llm_chat(session_id: str, system_prompt: str) -> LlmChat:
 async def ai_breakdown(req: AIBreakdownReq, user=Depends(get_current_user)):
     if not user.get("is_pro", False):
         raise HTTPException(402, "AI task breakdown is a Pro feature. Upgrade to unlock.")
+    lang = user.get("language", "en")
     sys_prompt = (
-        "You are a kind, ADHD-friendly assistant. Break a big task into 3-5 tiny, "
-        "concrete micro-steps. Each step must be small (≤15 min), specific, and start "
-        "with an action verb. Return ONLY a JSON array of strings, no commentary."
+        "Break this task into 3-5 micro-steps. For each step also estimate realistic time in "
+        "minutes for someone with ADHD (add 30% buffer). Return ONLY a JSON array of objects "
+        '[{"step": "string", "minutes": number}], no commentary. '
+        f"Language: {lang}."
     )
     chat = _llm_chat(f"breakdown-{user['id']}-{uuid.uuid4()}", sys_prompt)
     try:
         resp = await chat.send_message(UserMessage(text=f"Task: {req.task}"))
         text = resp.strip()
-        # Try to extract JSON array
         start = text.find("[")
         end = text.rfind("]")
+        steps_data = []
         if start != -1 and end != -1:
             arr = json.loads(text[start:end + 1])
-        else:
-            arr = [s.strip("- ").strip() for s in text.split("\n") if s.strip()]
-        steps = [{"id": str(uuid.uuid4()), "title": s, "done": False} for s in arr if s][:5]
-        return {"steps": steps}
+            for it in arr[:5]:
+                if isinstance(it, dict) and "step" in it:
+                    steps_data.append({
+                        "id": str(uuid.uuid4()),
+                        "title": str(it["step"]),
+                        "minutes": int(it.get("minutes", 15)),
+                        "done": False,
+                    })
+                elif isinstance(it, str):
+                    steps_data.append({"id": str(uuid.uuid4()), "title": it, "minutes": 15, "done": False})
+        if not steps_data:
+            lines = [s.strip("- ").strip() for s in text.split("\n") if s.strip()]
+            steps_data = [{"id": str(uuid.uuid4()), "title": s, "minutes": 15, "done": False} for s in lines if s][:5]
+        return {"steps": steps_data}
     except Exception as e:
         logging.exception("ai breakdown failed")
         raise HTTPException(500, f"AI breakdown failed: {e}")
 
 @api.get("/ai/affirmation")
 async def ai_affirmation(user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    if user.get("daily_affirmation") and user.get("daily_affirmation_date") == today_iso:
+        return {"affirmation": user["daily_affirmation"], "cached": True}
+    lang = user.get("language", "en")
     sys_prompt = (
-        "You write ADHD-positive daily affirmations. Warm, kind, never toxic positivity, "
-        "never shaming. 1 sentence, ≤20 words. Address the user directly."
+        "Generate one warm, 15-word max affirmation for someone with ADHD starting their day. "
+        "No toxic positivity. No 'you can do it!' clichés. Something real and grounding. "
+        f"Respond in {lang} only."
     )
-    chat = _llm_chat(f"affirm-{user['id']}-{utcnow().date().isoformat()}", sys_prompt)
+    chat = _llm_chat(f"affirm-{user['id']}-{today_iso}", sys_prompt)
     try:
         resp = await chat.send_message(UserMessage(text=f"Write an affirmation for {user.get('name','friend')}."))
-        return {"affirmation": resp.strip().strip('"')}
+        text = resp.strip().strip('"')
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"daily_affirmation": text, "daily_affirmation_date": today_iso}}
+        )
+        return {"affirmation": text, "cached": False}
     except Exception:
         logging.exception("affirmation failed")
-        return {"affirmation": "You showed up today, and that already counts. Be gentle with yourself."}
+        return {"affirmation": "You showed up today, and that already counts. Be gentle with yourself.", "cached": False}
 
 @api.post("/ai/empathy")
 async def ai_empathy(req: AIEmpathyReq, user=Depends(get_current_user)):
@@ -769,7 +829,11 @@ async def list_hyperfocus(user=Depends(get_current_user)):
 # ---------- Overwhelm mode ----------
 @api.get("/overwhelm/next-tiny")
 async def overwhelm_next_tiny(user=Depends(get_current_user)):
-    # Return the smallest (shortest title) incomplete task
+    # Analytics: increment overwhelm usage counter for this user
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"overwhelm_mode_used": True}, "$inc": {"overwhelm_mode_count": 1}}
+    )
     tasks = await db.tasks.find(
         {"user_id": user["id"], "completed": False},
         {"_id": 0}
@@ -825,6 +889,210 @@ async def apply_coach(req: CoachApplyReq):
 async def planner_week(user=Depends(get_current_user)):
     tasks = await db.tasks.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
     return {"tasks": tasks}
+
+# ---------- Blob Coach Chat ----------
+class BlobChatReq(BaseModel):
+    message: str
+    history: Optional[List[dict]] = None
+
+@api.post("/blob/chat")
+async def blob_chat(req: BlobChatReq, user=Depends(get_current_user)):
+    lang = user.get("language", "en")
+    sys_prompt = (
+        "You are Blob, a warm ADHD coach inside FocusFlow. Rules: "
+        "1. Always validate feelings in the first sentence. "
+        "2. Never use 'should', 'must', 'just', or 'simply'. "
+        "3. Offer maximum ONE tiny actionable step. "
+        "4. Keep responses under 50 words. "
+        "5. Use 1-2 emoji per message maximum. "
+        "6. If user seems in crisis, gently suggest the Overwhelm Mode button. "
+        f"7. Respond in language code: {lang}."
+    )
+    chat = _llm_chat(f"blob-{user['id']}-{uuid.uuid4()}", sys_prompt)
+    try:
+        context = ""
+        if req.history:
+            recent = req.history[-4:]
+            context = "\n".join([f"{m.get('role','user')}: {m.get('text','')}" for m in recent]) + "\n"
+        resp = await chat.send_message(UserMessage(text=f"{context}user: {req.message}"))
+        return {"reply": resp.strip()}
+    except Exception:
+        logging.exception("blob chat failed")
+        raise HTTPException(500, "Blob is resting. Try again in a moment.")
+
+# ---------- Reflections ----------
+class ReflectionReq(BaseModel):
+    accomplishments: str
+    challenges: List[str]
+    challenges_other: Optional[str] = None
+    end_mood: int
+
+@api.post("/reflections")
+async def add_reflection(req: ReflectionReq, user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "date": today_iso,
+        "accomplishments": req.accomplishments,
+        "challenges": req.challenges,
+        "challenges_other": req.challenges_other,
+        "end_mood": req.end_mood,
+        "created_at": iso(utcnow()),
+    }
+    await db.reflections.insert_one(doc)
+    reward = await award_xp_and_streak(user["id"], 10)
+    doc.pop("_id", None)
+    return {"reflection": doc, "reward": reward}
+
+@api.get("/reflections")
+async def list_reflections(user=Depends(get_current_user)):
+    items = await db.reflections.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(60)
+    return items
+
+# ---------- AI Insights ----------
+@api.get("/insights")
+async def get_insights(user=Depends(get_current_user)):
+    today_iso = utcnow().date().isoformat()
+    cached = await db.insights_cache.find_one(
+        {"user_id": user["id"], "date": today_iso}, {"_id": 0}
+    )
+    if cached:
+        return {"insights": cached["insights"], "cached": True}
+    user_age_days = 0
+    if user.get("created_at"):
+        try:
+            user_age_days = (utcnow() - datetime.fromisoformat(user["created_at"])).days
+        except Exception:
+            pass
+    if user_age_days < 14:
+        return {"insights": [], "locked": True, "unlocks_in_days": 14 - user_age_days}
+    cutoff = (utcnow() - timedelta(days=30)).isoformat()
+    sessions = await db.focus_sessions.find(
+        {"user_id": user["id"], "created_at": {"$gte": cutoff}}, {"_id": 0}
+    ).to_list(500)
+    moods = await db.moods.find(
+        {"user_id": user["id"], "created_at": {"$gte": cutoff}}, {"_id": 0}
+    ).to_list(500)
+    completed = await db.tasks.count_documents(
+        {"user_id": user["id"], "completed": True}
+    )
+    lang = user.get("language", "en")
+    sys_prompt = (
+        "Analyze this ADHD user's productivity data and return exactly 3 insights as a JSON array. "
+        "Each insight: {text, emoji, type}. Type options: 'positive' | 'pattern' | 'tip'. "
+        "Rules: specific numbers when possible, under 20 words each, warm coach tone, never shame, "
+        f"respond in {lang}."
+    )
+    chat = _llm_chat(f"insights-{user['id']}-{today_iso}", sys_prompt)
+    summary = {
+        "sessions_count": len(sessions),
+        "avg_duration_min": round(sum(s.get("duration_min", 0) for s in sessions) / max(len(sessions), 1), 1),
+        "moods": [{"m": m.get("mood"), "e": m.get("energy"), "t": m.get("created_at")} for m in moods[-30:]],
+        "completed_tasks": completed,
+    }
+    try:
+        resp = await chat.send_message(UserMessage(text=f"Data: {json.dumps(summary)}"))
+        text = resp.strip()
+        start, end = text.find("["), text.rfind("]")
+        insights = []
+        if start != -1 and end != -1:
+            arr = json.loads(text[start:end + 1])
+            for it in arr[:3]:
+                if isinstance(it, dict) and "text" in it:
+                    insights.append({
+                        "text": it["text"],
+                        "emoji": it.get("emoji", "✨"),
+                        "type": it.get("type", "tip"),
+                    })
+        if not insights:
+            insights = [{"text": "You're building a real practice. Keep showing up.", "emoji": "🌱", "type": "positive"}]
+        await db.insights_cache.insert_one({
+            "user_id": user["id"],
+            "date": today_iso,
+            "insights": insights,
+            "created_at": iso(utcnow()),
+        })
+        return {"insights": insights, "cached": False}
+    except Exception:
+        logging.exception("insights failed")
+        raise HTTPException(500, "Insights unavailable")
+
+# ---------- Referral ----------
+@api.get("/referral/stats")
+async def referral_stats(user=Depends(get_current_user)):
+    return {
+        "code": user.get("referral_code"),
+        "count": user.get("referral_count", 0),
+        "xp_earned": user.get("referral_xp_earned", 0),
+        "target": 5,
+        "pro_until": user.get("pro_until"),
+    }
+
+# ---------- Invite Links (body double) ----------
+class InviteReq(BaseModel):
+    room_id: str
+
+@api.post("/body-double/invite")
+async def create_invite(req: InviteReq, user=Depends(get_current_user)):
+    code = secrets.token_urlsafe(8)
+    await db.invite_links.insert_one({
+        "id": str(uuid.uuid4()),
+        "room_id": req.room_id,
+        "created_by": user["id"],
+        "invite_code": code,
+        "joined_by": [],
+        "created_at": iso(utcnow()),
+    })
+    return {"invite_code": code, "room_id": req.room_id}
+
+@api.get("/body-double/invite/{code}")
+async def get_invite(code: str, user=Depends(get_current_user)):
+    inv = await db.invite_links.find_one({"invite_code": code}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invite not found")
+    creator = await db.users.find_one({"id": inv["created_by"]}, {"_id": 0, "password_hash": 0})
+    if user["id"] != inv["created_by"] and user["id"] not in inv.get("joined_by", []):
+        await db.invite_links.update_one({"invite_code": code}, {"$addToSet": {"joined_by": user["id"]}})
+    return {
+        "room_id": inv["room_id"],
+        "created_by_name": creator.get("name") if creator else None,
+        "joined_count": len(inv.get("joined_by", [])),
+    }
+
+# ---------- Weekly digest log ----------
+@api.post("/admin/run-weekly-digest")
+async def run_weekly_digest():
+    cutoff = (utcnow() - timedelta(days=7)).isoformat()
+    today_iso = utcnow().date().isoformat()
+    log_path = Path("/app/logs")
+    log_path.mkdir(exist_ok=True)
+    sent = 0
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(2000)
+    for u in users:
+        if u.get("last_digest_sent") == today_iso:
+            continue
+        if not u.get("settings", {}).get("weekly_email", True):
+            continue
+        sessions = await db.focus_sessions.count_documents({
+            "user_id": u["id"], "created_at": {"$gte": cutoff}
+        })
+        if sessions == 0:
+            continue
+        body = (
+            f"Subject: {u.get('name')}, here's your week in review 💛\n"
+            f"To: {u.get('email')}\n\n"
+            f"You completed {sessions} focus sessions this week. "
+            f"Streak: {u.get('streak', 0)} days. Level {level_for_xp(u.get('xp', 0))['level']}. "
+            f"Open FocusFlow → focusflow.app\n"
+        )
+        with open(log_path / "email_digest.log", "a") as f:
+            f.write(f"--- {iso(utcnow())} ---\n{body}\n")
+        await db.users.update_one({"id": u["id"]}, {"$set": {"last_digest_sent": today_iso}})
+        sent += 1
+    return {"sent": sent}
 
 app.include_router(api)
 

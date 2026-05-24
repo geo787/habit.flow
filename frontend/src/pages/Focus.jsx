@@ -29,6 +29,8 @@ export default function FocusPage() {
   const [zone, setZone] = useState(false);
   const [zoneSummary, setZoneSummary] = useState(null);
   const [achievement, setAchievement] = useState("");
+  const [lastCompleted, setLastCompleted] = useState(null);
+  const [hideShare, setHideShare] = useState(() => localStorage.getItem("ff_hide_share") === "1");
   const intRef = useRef(null);
   const audioRef = useRef(null);
   const navigate = useNavigate();
@@ -85,7 +87,9 @@ export default function FocusPage() {
       return;
     }
     if (audioRef.current && SOUND_URLS[sound]) {
-      audioRef.current.play().catch(() => {});
+      audioRef.current.play().catch(() => {
+        toast("Click anywhere to enable audio 🎵");
+      });
     }
     intRef.current = setInterval(() => {
       setRemaining((r) => {
@@ -124,6 +128,13 @@ export default function FocusPage() {
         if (completed) {
           celebrate();
           toast.success(`+${data.xp_gained} XP — beautiful focus 🎉`);
+          // Count today's completed tasks for share
+          let tasksDone = 0;
+          try {
+            const tk = await api.get("/tasks");
+            tasksDone = tk.data.filter((t) => t.completed).length;
+          } catch {}
+          setLastCompleted({ minutes: mins, tasks: tasksDone });
         } else {
           toast(`+${data.xp_gained} XP for showing up. No shame.`);
         }
@@ -177,6 +188,11 @@ export default function FocusPage() {
   const ss = (remaining % 60).toString().padStart(2, "0");
   const pct = duration === 0 ? 0 : 1 - remaining / duration;
   const accent = zone ? "#7F77DD" : "#FFD166";
+  // Arc color stages
+  const ratio = duration === 0 ? 1 : remaining / duration;
+  const arcColor = zone ? "#7F77DD" : ratio > 0.3 ? "#1D9E75" : ratio > 0.1 ? "#EF9F27" : "#D85A30";
+  const arcPulse = !zone && ratio <= 0.1 && remaining > 0;
+  const arcFlash = remaining === 0;
 
   // Zone summary screen
   if (zoneSummary) {
@@ -235,7 +251,13 @@ export default function FocusPage() {
         <div className="absolute inset-6 rounded-full border border-[#3A3249]/60" />
         <svg className="absolute inset-0 -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="46" fill="none" stroke="#3A3249" strokeWidth="2" />
-          <circle cx="50" cy="50" r="46" fill="none" stroke={accent} strokeWidth="2" strokeDasharray={`${pct * 289.03} 289.03`} strokeLinecap="round" />
+          <circle
+            cx="50" cy="50" r="46" fill="none"
+            stroke={arcColor} strokeWidth="3"
+            strokeDasharray={`${pct * 289.03} 289.03`}
+            strokeLinecap="round"
+            className={`${arcPulse ? "ff-pulse-soft" : ""} ${arcFlash ? "ff-arc-flash" : ""}`}
+          />
         </svg>
         <div className="text-center z-10">
           <div className="text-6xl sm:text-7xl font-black tabular-nums" data-testid="focus-timer">{mm}:{ss}</div>
@@ -315,6 +337,37 @@ export default function FocusPage() {
             className="flex-1 accent-[#FFD166]"
           />
           <span className="text-xs text-[#8D829B] w-8 text-right">{Math.round((muted ? 0 : volume) * 100)}%</span>
+        </div>
+      )}
+
+      {/* Share row after completion */}
+      {lastCompleted && !hideShare && (
+        <div className="mt-8 ff-card p-4 max-w-md w-full flex flex-wrap items-center justify-center gap-2" data-testid="share-row">
+          <a
+            data-testid="share-twitter"
+            href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Just finished a ${lastCompleted.minutes}-min focus sprint with FocusFlow 🧠💛 ${lastCompleted.tasks} tasks done. Built for ADHD brains → focusflow.app #ADHD #focusflow`)}`}
+            target="_blank" rel="noopener noreferrer"
+            className="ff-btn-ghost text-xs"
+          >Share on X</a>
+          <button
+            data-testid="share-copy-achievement"
+            onClick={() => {
+              const text = `Just finished a ${lastCompleted.minutes}-min focus sprint 🧠💛 ${lastCompleted.tasks} tasks done today. focusflow.app #ADHD #focusflow`;
+              navigator.clipboard?.writeText(text);
+              toast.success("Copied ✨");
+            }}
+            className="ff-btn-ghost text-xs"
+          >Copy achievement</button>
+          <button
+            data-testid="share-stats"
+            onClick={() => navigate("/progress")}
+            className="ff-btn-ghost text-xs"
+          >Share stats card</button>
+          <button
+            data-testid="share-dismiss"
+            onClick={() => { localStorage.setItem("ff_hide_share", "1"); setHideShare(true); }}
+            className="text-[10px] text-[#8D829B] underline ml-1"
+          >Not now</button>
         </div>
       )}
     </div>
